@@ -105,14 +105,54 @@ def tileset_from_filename(filename):
         loaded_tilesets.setdefault(filename, result)
         return loaded_tilesets[filename]
 
+class GameObject(object):
+    width = 0
+    height = 0
+
+    tileset = None
+    tileid = None
+
+    positions = None
+
+    exists = True
+
+    frame_created = 0
+    frame_destroyed = -1
+
+    def __init__(self):
+        self.positions = []
+
+    def copy(self):
+        result = type(self)()
+        result.width = self.width
+        result.height = self.height
+        result.tileset = self.tileset
+        result.tileid = self.tileid
+        result.positions.extend(self.positions)
+        result.frame_created = self.frame_created
+        result.frame_destroyed = self.frame_destroyed
+        result.exists = self.exists
+        return result
+
+    def _congruence_attrs(self):
+        return (type(self), self.width, self.height, self.tileset, self.tileid)
+
+    def congruent(self, oth):
+        return self._congruence_attrs() == oth._congruence_attrs()
+
+class Player(GameObject):
+    pass
+
 class Map(object):
     def __init__(self):
         self.filename = ''
 
         self.tilesets = []
+        self.raw_tile_layers = []
         self.tile_layers = []
 
         self.object_layers = []
+        self.objects = []
 
         self.width = 0
         self.height = 0
@@ -129,6 +169,34 @@ class Map(object):
 
         handler = _MapSaxHandler(self)
         xml.sax.parse(filename, handler)
+
+        self._find_tile_objects()
+
+    def find_tileset(self, tileid):
+        for start, end, tileset in self.tilesets:
+            if start <= tileid < end:
+                return tileset, tileid - start
+        else:
+            return None, tileid
+
+    def _find_tile_objects(self):
+        for raw_tile_layer in self.raw_tile_layers:
+            tiles = list(raw_tile_layer)
+            for i, tileid in enumerate(tiles):
+                tileset, tilesetid = self.find_tileset(tileid)
+                if tileset:
+                    typename = tileset.properties[tilesetid].get('type')
+                    if typename == 'player':
+                        obj = Player()
+                    else:
+                        continue
+                    obj.width = int(tileset.properties[tilesetid].get('width', self.tilewidth))
+                    obj.height = int(tileset.properties[tilesetid].get('height', self.tileheight))
+                    x, y = divmod(i, self.tileswide)
+                    obj.positions.append((x * self.tilewidth, y * self.tileheight))
+                    self.objects.append(obj)
+                    tiles[i] = 0
+            self.tile_layers.append(tuple(tiles))
 
 class _MapSaxHandler(xml.sax.handler.ContentHandler):
     level = 0
@@ -197,7 +265,7 @@ class _MapSaxHandler(xml.sax.handler.ContentHandler):
 
             tiles = struct.unpack('<%sL' % str(self.map.tileswide * self.map.tileshigh), data)
 
-            self.map.tile_layers.append(tiles)
+            self.map.raw_tile_layers.append(tiles)
 
             self.layerdata = None
         elif self.level == 1 and name == 'layer':
@@ -206,4 +274,15 @@ class _MapSaxHandler(xml.sax.handler.ContentHandler):
     def characters(self, content):
         if self.level == 3 and self.in_layer:
             self.layerdata.append(content)
+
+class World(object):
+    def __init__(self, map):
+        self.map = map
+
+        self.last_frame = 0
+
+        self.objects = []
+
+        for obj in map.objects:
+            self.objects.append(obj.copy())
 
