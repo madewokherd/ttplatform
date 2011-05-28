@@ -140,6 +140,14 @@ class GameObject(object):
     def congruent(self, oth):
         return self._congruence_attrs() == oth._congruence_attrs()
 
+    def scale(self, bits):
+        self.width = self.width << bits
+        self.height = self.height << bits
+        new_positions = []
+        for x, y in self.positions:
+            new_positions.append((x << bits, y << bits))
+        self.positions = new_positions
+
 class Player(GameObject):
     pass
 
@@ -276,6 +284,8 @@ class _MapSaxHandler(xml.sax.handler.ContentHandler):
             self.layerdata.append(content)
 
 class World(object):
+    precision = 16
+
     def __init__(self, map):
         self.map = map
 
@@ -284,5 +294,10 @@ class World(object):
         self.objects = []
 
         for obj in map.objects:
-            self.objects.append(obj.copy())
+            obj = obj.copy()
+            self.objects.append(obj)
+            obj.scale(self.precision)
+
+        self.width = map.width << self.precision
+        self.height = map.height << self.precision
 
